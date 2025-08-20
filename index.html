@@ -119,7 +119,7 @@
         const loader = document.getElementById('loader');
         let isProcessing = false;
         let exchangeRates = {};
-
+        
         async function main() {
             startButton.onclick = setupCamera;
             swapButton.onclick = swapCurrencies;
@@ -141,7 +141,6 @@
                 video.addEventListener('loadedmetadata', () => {
                     video.play();
                 });
-                // Añadir el evento de clic/toque al video para analizar
                 video.addEventListener('click', processFrame);
             } catch (err) {
                 console.error("Error al acceder a la cámara:", err);
@@ -345,5 +344,4 @@
     </script>
 </body>
 </html>
-
 
