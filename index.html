@@ -252,9 +252,9 @@
             const formData = new FormData();
             formData.append('file', imageData, 'image.jpg');
             formData.append('language', 'eng');
-            formData.append('apikey', 'helloworld'); // Clave de prueba para acceder al servicio gratuito
+            formData.append('apikey', 'helloworld'); 
             formData.append('isOverlayRequired', 'true');
-            formData.append('OCREngine', '2'); // Motor 2 es más rápido
+            formData.append('OCREngine', '2'); 
             
             const response = await fetch('https://api.ocr.space/parse/image', {
                 method: 'POST',
@@ -271,32 +271,42 @@
                 throw new Error(data.ErrorMessage);
             }
 
-            // Adaptar la respuesta de la API a la lógica de displayConversion
-            const words = data.ParsedResults[0]?.TextOverlay?.Lines.flatMap(line => line.Words) || [];
-            return words;
+            const parsedResults = data.ParsedResults && data.ParsedResults[0];
+            return (parsedResults?.TextOverlay?.Lines.flatMap(line => line.Words) || []).filter(word => word.WordText.length > 0);
         }
 
         async function displayConversion(words) {
             overlay.innerHTML = '';
             let bestCandidate = null;
+            let highestConfidence = -1;
+
             words.forEach(word => {
-                const cleanedText = word.WordText.replace(/[^0-9.,]/g, '').replace(',', '.');
-                const number = parseFloat(cleanedText);
-                if (!isNaN(number)) {
-                    if (!bestCandidate || (word.Confidence !== undefined && word.Confidence > bestCandidate.confidence)) {
-                        bestCandidate = {
-                            number,
-                            box: {
-                                x0: word.Left,
-                                y0: word.Top,
-                                x1: word.Left + word.Width,
-                                y1: word.Top + word.Height
-                            },
-                            confidence: word.Confidence,
-                        };
+                const text = word.WordText;
+                const numberMatch = text.match(/[\d,.]+/);
+                
+                if (numberMatch) {
+                    const cleanedText = numberMatch[0].replace(',', '.');
+                    const number = parseFloat(cleanedText);
+                    
+                    if (!isNaN(number)) {
+                        const confidence = word.Confidence !== undefined ? word.Confidence : 0;
+                        
+                        if (confidence > highestConfidence) {
+                            highestConfidence = confidence;
+                            bestCandidate = {
+                                number,
+                                box: {
+                                    x0: word.Left,
+                                    y0: word.Top,
+                                    x1: word.Left + word.Width,
+                                    y1: word.Top + word.Height
+                                }
+                            };
+                        }
                     }
                 }
             });
+
             if (bestCandidate) {
                 const from = fromCurrencySelect.value;
                 const to = toCurrencySelect.value;
@@ -311,7 +321,9 @@
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 }).format(convertedAmount);
+
                 resultText.textContent = formattedResult;
+
                 const box = bestCandidate.box;
                 const scaleX = video.clientWidth / video.videoWidth;
                 const scaleY = video.clientHeight / video.videoHeight;
@@ -330,6 +342,7 @@
                 resultText.textContent = '---';
             }
         }
+
         main();
     </script>
 </body>
