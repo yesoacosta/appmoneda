@@ -119,8 +119,6 @@
         const loader = document.getElementById('loader');
         let isProcessing = false;
         let exchangeRates = {};
-        let lastProcessingTime = 0;
-        const PROCESSING_INTERVAL = 4000;
 
         async function main() {
             startButton.onclick = setupCamera;
@@ -142,8 +140,9 @@
                 video.srcObject = stream;
                 video.addEventListener('loadedmetadata', () => {
                     video.play();
-                    requestAnimationFrame(processFrameLoop);
                 });
+                // Añadir el evento de clic/toque al video para analizar
+                video.addEventListener('click', processFrame);
             } catch (err) {
                 console.error("Error al acceder a la cámara:", err);
                 statusMessage.classList.remove('hidden');
@@ -220,24 +219,23 @@
         }
         fromCurrencySelect.addEventListener('change', fetchExchangeRates);
         toCurrencySelect.addEventListener('change', fetchExchangeRates);
-        async function processFrameLoop(timestamp) {
-            if (timestamp - lastProcessingTime > PROCESSING_INTERVAL && !isProcessing) {
-                isProcessing = true;
-                resultText.textContent = 'Procesando...';
-                try {
-                    const canvasData = await captureFrameAndConvert();
-                    const words = await recognizeText(canvasData);
-                    displayConversion(words);
-                } catch (err) {
-                    console.error('Error en el reconocimiento de OCR:', err);
-                    resultText.textContent = 'Error de OCR';
-                } finally {
-                    isProcessing = false;
-                    lastProcessingTime = timestamp;
-                }
+        
+        async function processFrame() {
+            if (isProcessing) return;
+            isProcessing = true;
+            resultText.textContent = 'Procesando...';
+            try {
+                const canvasData = await captureFrameAndConvert();
+                const words = await recognizeText(canvasData);
+                displayConversion(words);
+            } catch (err) {
+                console.error('Error en el reconocimiento de OCR:', err);
+                resultText.textContent = 'Error de OCR';
+            } finally {
+                isProcessing = false;
             }
-            requestAnimationFrame(processFrameLoop);
         }
+
         function captureFrameAndConvert() {
             return new Promise((resolve, reject) => {
                 canvas.width = video.videoWidth;
@@ -272,8 +270,6 @@
                 throw new Error(data.ErrorMessage);
             }
 
-            // Esta es la parte del código que causó el problema.
-            // La he restaurado a la versión que sabemos que funcionaba.
             return data.ParsedResults[0]?.TextOverlay?.Lines[0]?.Words || [];
         }
 
@@ -349,4 +345,5 @@
     </script>
 </body>
 </html>
+
 
