@@ -141,6 +141,12 @@
                 video.addEventListener('loadedmetadata', () => {
                     video.play();
                 });
+                // Evento para móviles
+                video.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); // Evita el comportamiento de zoom en algunos navegadores
+                    processFrame();
+                });
+                // Evento para escritorio
                 video.addEventListener('click', processFrame);
             } catch (err) {
                 console.error("Error al acceder a la cámara:", err);
@@ -344,4 +350,3 @@
     </script>
 </body>
 </html>
-
