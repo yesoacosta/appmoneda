@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor de Moneda con Cámara</title>
+    
+    <link rel="manifest" href="/manifest.json">
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/service-worker.js')
+              .then(registration => {
+                console.log('Service Worker registrado con éxito:', registration);
+              })
+              .catch(error => {
+                console.error('Fallo en el registro del Service Worker:', error);
+              });
+          });
+        }
+    </script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+        }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: none;
+        }
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .detected-box {
+            position: absolute;
+            border: 2px solid #10B981;
+            background-color: rgba(16, 185, 129, 0.2);
+            border-radius: 8px;
+        }
+        .detected-text {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            background-color: #10B981;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            white-space: nowrap;
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen overflow-hidden">
+    <div class="w-full max-w-2xl h-full flex flex-col bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative">
+        <header class="p-4 sm:p-3 bg-gray-900/80 backdrop-blur-sm z-10">
+            <h1 class="text-xl sm:text-lg font-bold text-center mb-2">Conversor de Moneda</h1>
+            <div class="grid grid-cols-3 gap-2 items-center">
+                <div class="flex flex-col">
+                    <label for="fromCurrency" class="text-xs text-gray-400 mb-1">Detectar (Desde)</label>
+                    <select id="fromCurrency" class="bg-gray-700 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></select>
+                </div>
+                <div class="flex justify-center items-end h-full">
+                    <button id="swapButton" class="p-2 rounded-full bg-gray-700 hover:bg-emerald-600 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                    </button>
+                </div>
+                <div class="flex flex-col">
+                    <label for="toCurrency" class="text-xs text-gray-400 mb-1">Convertir (A)</label>
+                    <select id="toCurrency" class="bg-gray-700 border border-gray-600 rounded-md p-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"></select>
+                </div>
+            </div>
+        </header>
+        <main class="flex-grow relative bg-gray-900">
+            <video id="video" playsinline autoplay muted></video>
+            <div id="overlay"></div>
+            <div id="statusMessage" class="absolute inset-0 flex items-center justify-center bg-black/50 z-20 flex-col p-4">
+                <div id="loader" class="mb-4">
+                    <svg class="animate-spin h-8 w-8 text-emerald-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <p id="statusText" class="text-center">Iniciando cámara...</p>
+                <button id="startButton" class="mt-4 bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded-lg font-semibold transition-colors hidden">
+                    Iniciar Cámara
+                </button>
+            </div>
+        </main>
+        <footer class="p-3 sm:p-2 bg-gray-900/80 backdrop-blur-sm z-10 text-center">
+            <p class="text-sm text-gray-400">Resultado de la conversión:</p>
+            <p id="resultText" class="text-xl sm:text-2xl font-bold text-emerald-400 h-8">---</p>
+        </footer>
+    </div>
+    <canvas id="canvas" class="hidden"></canvas>
+    <script>
+        // No necesitas clave para la versión gratuita de OnlineOCR, pero mantenemos la variable
+        const API_KEY = 'helloworld'; 
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const fromCurrencySelect = document.getElementById('fromCurrency');
+        const toCurrencySelect = document.getElementById('toCurrency');
+        const resultText = document.getElementById('resultText');
+        const overlay = document.getElementById('overlay');
+        const statusMessage = document.getElementById('statusMessage');
+        const statusText = document.getElementById('statusText');
+        const startButton = document.getElementById('startButton');
+        const swapButton = document.getElementById('swapButton');
+        const loader = document.getElementById('loader');
+        let isProcessing = false;
+        let exchangeRates = {};
+        let lastProcessingTime = 0;
+        const PROCESSING_INTERVAL = 1500;
+        async function main() {
+            startButton.onclick = setupCamera;
+            swapButton.onclick = swapCurrencies;
+            await populateCurrencies();
+            statusText.textContent = 'Listo para iniciar. Presiona el botón.';
+            loader.classList.add('hidden');
+            startButton.classList.remove('hidden');
+        }
+        async function setupCamera() {
+            statusMessage.classList.add('hidden');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment'
+                    }
+                });
+                video.srcObject = stream;
+                video.addEventListener('loadedmetadata', () => {
+                    video.play();
+                    requestAnimationFrame(processFrameLoop);
+                });
+            } catch (err) {
+                console.error("Error al acceder a la cámara:", err);
+                statusMessage.classList.remove('hidden');
+                loader.classList.add('hidden');
+                statusText.textContent = 'Error al acceder a la cámara. Asegúrate de dar permisos.';
+            }
+        }
+        async function populateCurrencies() {
+            statusText.textContent = 'Cargando lista de monedas...';
+            try {
+                const response = await fetch('https://api.frankfurter.app/currencies');
+                const currencies = await response.json();
+                const popularCurrencies = ['USD', 'EUR', 'ARS', 'BRL', 'CLP', 'UYU', 'MXN', 'COP'];
+                fromCurrencySelect.innerHTML = '';
+                toCurrencySelect.innerHTML = '';
+                if (!currencies.ARS) {
+                    currencies.ARS = 'Argentine Peso';
+                }
+                for (const code in currencies) {
+                    if (popularCurrencies.includes(code)) {
+                        const option1 = new Option(`${code} - ${currencies[code]}`, code);
+                        const option2 = new Option(`${code} - ${currencies[code]}`, code);
+                        fromCurrencySelect.add(option1);
+                        toCurrencySelect.add(option2);
+                    }
+                }
+                fromCurrencySelect.value = 'BRL';
+                toCurrencySelect.value = 'ARS';
+                console.log('Monedas cargadas.');
+                await fetchExchangeRates();
+            } catch (error) {
+                console.error('Error al cargar las monedas:', error);
+                statusText.textContent = 'No se pudieron cargar las monedas.';
+            }
+        }
+        function swapCurrencies() {
+            const fromValue = fromCurrencySelect.value;
+            fromCurrencySelect.value = toCurrencySelect.value;
+            toCurrencySelect.value = fromValue;
+            fetchExchangeRates();
+        }
+        async function fetchExchangeRates() {
+            const from = fromCurrencySelect.value;
+            const to = toCurrencySelect.value;
+            if (from === to) {
+                exchangeRates[from] = { [to]: 1 };
+                return;
+            }
+            try {
+                const response = await fetch(`https://open.er-api.com/v6/latest/${from}`);
+                const data = await response.json();
+                if (data && data.result === 'success' && data.rates) {
+                    exchangeRates[from] = data.rates;
+                    const rate = exchangeRates[from][to];
+                    if (rate) {
+                        console.log(`Tasa de cambio actualizada: 1 ${from} = ${rate} ${to}`);
+                    } else {
+                        console.error(`Error: No se encontró la tasa para la moneda de destino '${to}'`);
+                        resultText.textContent = 'Tasa no disp.';
+                    }
+                } else {
+                    console.error('Error: La API no devolvió una respuesta válida.', data);
+                    if (!exchangeRates[from]) {
+                        exchangeRates[from] = {};
+                    }
+                    exchangeRates[from][to] = 0;
+                    resultText.textContent = 'Tasa no disp.';
+                }
+            } catch (error) {
+                console.error('Error al obtener la tasa de cambio:', error);
+                resultText.textContent = 'Error de red';
+            }
+        }
+        fromCurrencySelect.addEventListener('change', fetchExchangeRates);
+        toCurrencySelect.addEventListener('change', fetchExchangeRates);
+        async function processFrameLoop(timestamp) {
+            if (timestamp - lastProcessingTime > PROCESSING_INTERVAL && !isProcessing) {
+                isProcessing = true;
+                resultText.textContent = 'Procesando...';
+                try {
+                    const canvasData = await captureFrameAndConvert();
+                    const words = await recognizeText(canvasData);
+                    displayConversion(words);
+                } catch (err) {
+                    console.error('Error en el reconocimiento de OCR:', err);
+                    resultText.textContent = 'Error de OCR';
+                } finally {
+                    isProcessing = false;
+                    lastProcessingTime = timestamp;
+                }
+            }
+            requestAnimationFrame(processFrameLoop);
+        }
+        function captureFrameAndConvert() {
+            return new Promise((resolve, reject) => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(blob => {
+                    resolve(blob);
+                }, 'image/jpeg');
+            });
+        }
+        async function recognizeText(imageData) {
+            // OnlineOCR API
+            const formData = new FormData();
+            formData.append('file', imageData, 'image.jpg');
+            formData.append('language', 'eng');
+            formData.append('apikey', 'helloworld'); // Clave de prueba para acceder al servicio gratuito
+            formData.append('isOverlayRequired', 'true');
+            formData.append('OCREngine', '2'); // Motor 2 es más rápido
+            
+            const response = await fetch('https://api.ocr.space/parse/image', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.ErrorMessage || 'Error en la llamada a la API de OnlineOCR.');
+            }
+
+            const data = await response.json();
+            if (data.ErrorMessage) {
+                throw new Error(data.ErrorMessage);
+            }
+
+            // Adaptar la respuesta de la API a la lógica de displayConversion
+            const words = data.ParsedResults[0]?.TextOverlay?.Lines.flatMap(line => line.Words) || [];
+            return words;
+        }
+
+        async function displayConversion(words) {
+            overlay.innerHTML = '';
+            let bestCandidate = null;
+            words.forEach(word => {
+                const cleanedText = word.WordText.replace(/[^0-9.,]/g, '').replace(',', '.');
+                const number = parseFloat(cleanedText);
+                if (!isNaN(number)) {
+                    if (!bestCandidate || (word.Confidence !== undefined && word.Confidence > bestCandidate.confidence)) {
+                        bestCandidate = {
+                            number,
+                            box: {
+                                x0: word.Left,
+                                y0: word.Top,
+                                x1: word.Left + word.Width,
+                                y1: word.Top + word.Height
+                            },
+                            confidence: word.Confidence,
+                        };
+                    }
+                }
+            });
+            if (bestCandidate) {
+                const from = fromCurrencySelect.value;
+                const to = toCurrencySelect.value;
+                if (!exchangeRates[from]) {
+                    await fetchExchangeRates();
+                }
+                const rate = exchangeRates[from]?.[to] ?? 0;
+                const convertedAmount = bestCandidate.number * rate;
+                const formattedResult = new Intl.NumberFormat('es-AR', {
+                    style: 'currency',
+                    currency: to,
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(convertedAmount);
+                resultText.textContent = formattedResult;
+                const box = bestCandidate.box;
+                const scaleX = video.clientWidth / video.videoWidth;
+                const scaleY = video.clientHeight / video.videoHeight;
+                const detectedBox = document.createElement('div');
+                detectedBox.className = 'detected-box';
+                detectedBox.style.left = `${(box.x0) * scaleX}px`;
+                detectedBox.style.top = `${box.y0 * scaleY}px`;
+                detectedBox.style.width = `${(box.x1 - box.x0) * scaleX}px`;
+                detectedBox.style.height = `${(box.y1 - box.y0) * scaleY}px`;
+                const detectedText = document.createElement('div');
+                detectedText.className = 'detected-text';
+                detectedText.textContent = formattedResult;
+                detectedBox.appendChild(detectedText);
+                overlay.appendChild(detectedBox);
+            } else {
+                resultText.textContent = '---';
+            }
+        }
+        main();
+    </script>
+</body>
+</html>
