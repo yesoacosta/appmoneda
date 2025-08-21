@@ -192,7 +192,8 @@
                 for (const code in currencies) {
                     if (popularCurrencies.includes(code)) {
                         const option1 = new Option(`${code} - ${currencies[code]}`, code);
-                        const option2 = new Option(`${code} - ${currencies[dcode]}`, code);
+                        // ¡Aquí estaba el error! Se usaba dcode en lugar de code.
+                        const option2 = new Option(`${code} - ${currencies[code]}`, code);
                         fromCurrencySelect.add(option1);
                         toCurrencySelect.add(option2);
                     }
@@ -360,7 +361,6 @@
                 resultText.textContent = formattedResult;
 
                 const box = bestCandidate.box;
-                // Las coordenadas ya están recortadas, solo necesitamos escalar al tamaño de la pantalla
                 const scaleX = video.clientWidth / canvas.width;
                 const scaleY = video.clientHeight / canvas.height;
                 const detectedBox = document.createElement('div');
