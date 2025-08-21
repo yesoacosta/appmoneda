@@ -156,9 +156,12 @@
         async function setupCamera() {
             statusMessage.classList.add('hidden');
             try {
+                // He modificado esta parte para solicitar una resolución más alta
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        facingMode: 'environment'
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     }
                 });
                 video.srcObject = stream;
@@ -192,7 +195,6 @@
                 for (const code in currencies) {
                     if (popularCurrencies.includes(code)) {
                         const option1 = new Option(`${code} - ${currencies[code]}`, code);
-                        // ¡Aquí estaba el error! Se usaba dcode en lugar de code.
                         const option2 = new Option(`${code} - ${currencies[code]}`, code);
                         fromCurrencySelect.add(option1);
                         toCurrencySelect.add(option2);
